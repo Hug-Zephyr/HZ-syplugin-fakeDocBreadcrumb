@@ -1,22 +1,21 @@
 {
-  "name": "syplugin-fakeDocBreadcrumb",
-  "author": "OpaqueGlass",
-  "url": "https://github.com/OpaqueGlass/syplugin-fakeDocBreadcrumb",
+  "name": "HZ-syplugin-fakeDocBreadcrumb",
+  "author": "Hug-Zephyr",
+  "url": "https://github.com/Hug-Zephyr/HZ-syplugin-fakeDocBreadcrumb",
   "version": "1.1.1",
   "displayName": {
-    "default": "fakeDocBreadcrumb",
-    "zh_CN": "(伪)文档面包屑",
-    "en_US": "Fake Doc Breadcrumb"
+    "default": "fakeDocBreadcrumb HZ",
+    "zh_CN": "(伪)文档面包屑 HZ版",
+    "en_US": "Fake Doc Breadcrumb HZ"
   },
   "description": {
     "default": "Add a doc-breadcrumb",
-    "zh_CN": "再添加一个文档面包屑",
+    "zh_CN": "添加一个文档面包屑",
     "en_US": "Add a doc-breadcrumb"
   },
   "readme": {
     "default": "README.md",
-    "zh_CN": "README_zh_CN.md",
-    "en_US": "README.md"
+    "zh_CN": "README.md"
   },
   "i18n": [
     "zh_CN",
@@ -26,8 +25,6 @@
     "openCollective": "",
     "patreon": "",
     "github": "",
-    "custom": [
-      "https://wj.qq.com/s2/12395364/b69f/"
-    ]
+    "custom": []
   }
-}
+} 
