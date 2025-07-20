@@ -40,6 +40,7 @@ let g_hidedBreadcrumb = false;
 let g_setting = {
     "nameMaxLength": null,
     "docMaxNum": null,
+    "docShowMaxNum": null,
     "showNotebook": null,
     "typeHide": null,
     "foldedFrontShow": null,
@@ -54,6 +55,7 @@ let g_setting = {
 let g_setting_default = {
     "nameMaxLength": 15,
     "docMaxNum": 128,
+    "docShowMaxNum": 9,
     "showNotebook": true,
     "typeHide": false,
     "foldedFrontShow": 2,
@@ -173,6 +175,7 @@ class FakeDocBreadcrumb extends siyuan.Plugin {
         settingForm.innerHTML = generateSettingPanelHTML([
             new SettingProperty("RESERVE_HINT", "HINT", null),
             new SettingProperty("docMaxNum", "NUMBER", [0, 1024]),
+            new SettingProperty("docShowMaxNum", "NUMBER", [0, 28]),
             new SettingProperty("nameMaxLength", "NUMBER", [0, 1024]),
             new SettingProperty("showNotebook", "SWITCH", null),
             new SettingProperty("typeHide", "SWITCH", null),
@@ -199,7 +202,7 @@ class FakeDocBreadcrumb extends siyuan.Plugin {
      */
     eventBusInnerHandler() {
         this.eventBus.on("loaded-protyle-static", mainEventBusHander);
-        this.eventBus.on("switch-protyle", mainEventBusHander);
+        // this.eventBus.on("switch-protyle", mainEventBusHander);
         if (g_setting.immediatelyUpdate) {
             this.eventBus.on("ws-main", eventBusHandler);
         }
@@ -366,16 +369,12 @@ async function main(eventProtyle) {
     let errorTemp = null;
     // do {
         retryCount ++ ;
-        if (g_mutex[eventProtyle?.block?.rootID] != null && g_mutex[eventProtyle?.block?.rootID] > 0) {
+        if (g_mutex[eventProtyle?.block?.rootID] == eventProtyle.element) {
             debugPush("发现已有main正在运行，已停止");
             return;
         }
         try {
-            if (g_mutex[eventProtyle?.block?.rootID]) {
-                g_mutex[eventProtyle?.block?.rootID]++;
-            } else {
-                g_mutex[eventProtyle?.block?.rootID] = 1;
-            }
+            g_mutex[eventProtyle?.block?.rootID] = eventProtyle.element;
             // 获取当前文档id
             // const docId = getCurrentDocIdF();
             const docId = eventProtyle.block.rootID;
@@ -411,7 +410,7 @@ async function main(eventProtyle) {
             errorPush(err);
             errorTemp = err;
         }finally{
-            g_mutex[eventProtyle?.block?.rootID]--;
+            delete g_mutex[eventProtyle?.block?.rootID];
         }
         if (errorTemp) {
             debugPush("由于出现错误，终止重试", errorTemp);
@@ -502,7 +501,7 @@ async function generateElement(pathObjects, docId, protyle) {
         >
         <use xlink:href="#iconRight"></use></svg></span>
         `;
-    const oneItem = `<span class="protyle-breadcrumb__item fake-breadcrumb-click" %FLOATWINDOW% data-id="%DOCID%" data-node-id="%0%" data-og-type="%3%" data-node-names="%NAMES%">
+    const oneItem = `<span class="protyle-breadcrumb__item fake-breadcrumb-click" %FLOATWINDOW% data-node-id="%0%" data-og-type="%3%" data-node-names="%NAMES%">
         %4%
         <span class="protyle-breadcrumb__text" title="%1%">%2%</span>
     </span>
@@ -519,8 +518,8 @@ async function generateElement(pathObjects, docId, protyle) {
         if (countDebug > 200) {
             throw new Error(">_<出现死循环");
         }
-        // 层级过深时，对中间内容加以限制
-        if (pathObjects.length > 5 && i >= foldStartAt && i <= foldEndAt) {
+        // 层级过深时，对中间内容加以限制 -- hz: 取消这个效果, 改为超过5时, 改为新起一行显示
+        if (pathObjects.length > 5 && i >= foldStartAt && i <= foldEndAt && 0) {
             let hidedIds = new Array();
             let hidedNames = new Array();
             let hideFrom = foldStartAt;
@@ -559,17 +558,17 @@ async function generateElement(pathObjects, docId, protyle) {
                 .replaceAll("%3%", onePathObject.type)
                 .replaceAll("%4%", getEmojiHtmlStr(onePathObject.icon, onePathObject.subFileCount != 0, "og-fdb-bread-emojitext", "og-fdb-bread-emojipic", true, false))
                 .replaceAll("%FLOATWINDOW%", g_setting.allowFloatWindow && onePathObject.type == "FILE" ? `data-type="block-ref" data-subtype="d" data-id="${onePathObject.id}"` : "");
+            htmlStr += divideArrow
+                .replaceAll("%4%", onePathObject.type)
+                .replaceAll("%5%", pathObjects[i].id)
+                .replaceAll("%6%", pathObjects[i+1]? pathObjects[i+1].id : pathObjects[i].id)
+                .replaceAll("%7%", pathObjects[i].path)
+                .replaceAll("%8%", pathObjects[i].box);
         }
         // 最后一个文档、且不含子文档跳出判断
-        if (i == pathObjects.length - 1 && !await isChildDocExist(onePathObject.id)) {
-            continue;
-        }
-        htmlStr += divideArrow
-            .replaceAll("%4%", onePathObject.type)
-            .replaceAll("%5%", pathObjects[i].id)
-            .replaceAll("%6%", pathObjects[i+1]?.id)
-            .replaceAll("%7%", pathObjects[i].path)
-            .replaceAll("%8%", pathObjects[i].box);
+        // if (i == pathObjects.length - 1 && !await isChildDocExist(onePathObject.id)) {
+        //     continue;
+        // }
         // if (i == pathObjects.length - 1) {
         //     htmlStr += oneItem.replaceAll("%0%", pathObjects[i].id)
         //     .replaceAll("%1%", "···")
@@ -656,17 +655,28 @@ function setAndApply(finalElement, docId, eventProtyle) {
 
     debugPush("重写面包屑成功");
     // v0.2.10应该是修改为仅范围内生效了，或许不再需要remove了
-    [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .fake-breadcrumb-click[data-og-type="FILE"]`), (elem)=>{
-        elem.removeEventListener("click", openRefLinkAgent);
-        elem.addEventListener("click", openRefLinkAgent);
+    [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .fake-breadcrumb-click[data-og-type="FILE"], .protyle-breadcrumb__item--active`), (elem)=>{
+        // console.log(elem);
+        // // 点击打开文档
+        // elem.removeEventListener("click", openRefLinkAgent);
+        // elem.addEventListener("click", openRefLinkAgent);
+        // // 右键点击显示兄弟列表
+        // elem.removeEventListener("contextmenu", openRelativeMenu.bind(null, protyleElem));
+        // elem.addEventListener("contextmenu", openRelativeMenu.bind(null, protyleElem));
+        // 点击显示兄弟列表
+        elem.removeEventListener("click", openRelativeMenu.bind(null, protyleElem));
+        elem.addEventListener("click", openRelativeMenu.bind(null, protyleElem));
     });
+
+    // // 点击折叠按钮
+    // [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .${CONSTANTS.ARROW_SPAN_NAME}[data-og-type]`), (elem)=>{
+    //     elem.removeEventListener("click", openRelativeMenu.bind(null, protyleElem));
+    //     elem.addEventListener("click", openRelativeMenu.bind(null, protyleElem));
+    // });
+    // 
     [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .fake-breadcrumb-click[data-og-type="..."]`), (elem)=>{
         elem.removeEventListener("click", openHideMenu.bind(null, protyleElem));
         elem.addEventListener("click", openHideMenu.bind(null, protyleElem));
-    });
-    [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .${CONSTANTS.ARROW_SPAN_NAME}[data-og-type="FILE"], .og-fake-doc-breadcrumb-container .${CONSTANTS.ARROW_SPAN_NAME}[data-og-type="NOTEBOOK"]`), (elem)=>{
-        elem.removeEventListener("click", openRelativeMenu.bind(null, protyleElem));
-        elem.addEventListener("click", openRelativeMenu.bind(null, protyleElem));
     });
     [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .protyle-breadcrumb__bar`), (elem)=>{
         elem.removeEventListener("mousewheel", scrollConvert.bind(null, elem), true);
@@ -717,11 +727,21 @@ function openHideMenu(protyleElem, event) {
 
 
 async function openRelativeMenu(protyleElem, event) {
-    let id = event.currentTarget.getAttribute("data-parent-id");
-    let nextId = event.currentTarget.getAttribute("data-next-id");
-    let thisPath = event.currentTarget.getAttribute("data-og-path");
-    let box = event.currentTarget.getAttribute("data-og-box");
-    let rect = event.currentTarget.getBoundingClientRect();
+    if (this.lastMenu) {
+        this.lastMenu.close();
+        console.log(this.lastMenu.isOpen)
+        this.lastMenu = null;
+    }
+    const click_ele = event.currentTarget;
+    let arrow = click_ele.previousElementSibling;
+    if (!arrow) {
+        arrow = [...protyleElem.querySelectorAll('.og-fake-doc-breadcrumb-arrow-span')].pop();;
+    }
+    let id = arrow.getAttribute("data-parent-id");
+    let nextId = arrow.getAttribute("data-next-id");
+    let thisPath = arrow.getAttribute("data-og-path");
+    let box = arrow.getAttribute("data-og-box");
+    let rect = click_ele.getBoundingClientRect();
     event.stopPropagation();
     event.preventDefault();
     let sqlResult = [{
@@ -729,7 +749,14 @@ async function openRelativeMenu(protyleElem, event) {
         box: box
     }];
     let siblings = await getChildDocuments(id, sqlResult);
-    if (siblings.length <= 0) return;
+    if (siblings.length <= 0) {
+        siblings = [{
+            name: "空.sy",
+            icon: "",
+            subFileCount: 0,
+            id: "temp"
+        }]
+    };
     const tempMenu = new siyuan.Menu("newMenu");
     for (let i = 0; i < siblings.length; i++) {
         let currSibling = siblings[i];
@@ -746,6 +773,7 @@ async function openRelativeMenu(protyleElem, event) {
             </span>`,
             accelerator: nextId == currSibling.id ? "<-" : undefined,
             click: (event)=>{
+                if (currSibling.id == 'temp') return;
                 let docId = event.querySelector("[data-doc-id]")?.getAttribute("data-doc-id")
                 openRefLink(undefined, docId, {
                     ctrlKey: event?.ctrlKey,
@@ -761,7 +789,19 @@ async function openRelativeMenu(protyleElem, event) {
     }
 
     tempMenu.open({x: rect.left, y: rect.bottom, isLeft:false});
-    
+    this.lastMenu = tempMenu;
+    // 设置最大高度
+    const common_menu = tempMenu.element.querySelector('.b3-menu__items');
+    if (0 != g_setting.docShowMaxNum) {
+        common_menu.style.maxHeight = `${g_setting.docShowMaxNum*30+4}px`;
+    }
+    // 当前文档上下居中
+    common_menu.querySelector('.b3-menu__item--selected')?.scrollIntoView({
+        behavior: 'smooth', // 可选：平滑滚动
+        block: 'center'   // 或 'start', 'center', 'end'
+    })
+    // 再打开一次, 防止文档过多导致菜单上去
+    tempMenu.open({x: rect.left, y: rect.bottom, isLeft:false});
 }
 
 
@@ -842,7 +882,7 @@ function setStyle() {
     style.setAttribute("id", CONSTANTS.STYLE_ID);
     style.innerHTML = `
     .og-breadcrumb-oneline {
-        margin-right: 3px;
+        // margin-right: 3px;
         overflow-x: auto; /* 滚动查看，oneline套了一层div所以也得加overflow */
         flex-shrink: 0.5; /* 块面包屑过长时避免大范围占用文档面包屑 */
     }
@@ -879,6 +919,8 @@ function setStyle() {
         margin-left: 0px;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 20px;
+        text-align: center;
     }
 
     .og-fake-doc-breadcrumb-container.protyle-breadcrumb {
@@ -889,17 +931,6 @@ function setStyle() {
 
     .${CONSTANTS.CONTAINER_CLASS_NAME} {
         display: block !important;
-    }
-
-    .og-fake-doc-breadcrumb-arrow-span[data-og-type=FILE], .og-fake-doc-breadcrumb-arrow-span[data-og-type=NOTEBOOK] {
-        cursor: pointer;
-    }
-    /* 上下错位调整，以及增大触发范围 */
-    .og-fake-doc-breadcrumb-arrow-span {
-        height: 24px;
-        border-radius: var(--b3-border-radius);
-        display: flex;
-        align-items: center;
     }
 
     .og-hide-breadcrumb {
@@ -920,15 +951,28 @@ function setStyle() {
         transform: none;
     }
 
+    /* 折叠按钮 样式
+    // 箭头样式
+    .og-fake-doc-breadcrumb-arrow-span[data-og-type=FILE], .og-fake-doc-breadcrumb-arrow-span[data-og-type=NOTEBOOK] {
+        cursor: pointer;
+    }
+    // 悬浮样式
     .og-fake-doc-breadcrumb-arrow-span:hover {
         color: var(--b3-theme-on-background);
         background-color: var(--b3-list-hover);
     }
-
     .og-fake-doc-breadcrumb-arrow-span:hover > .og-fake-doc-breadcrumb-arrow {
         color: var(--b3-menu-highlight-color);
         background-color: var(--b3-menu-highlight-background);
     }
+    // 上下错位调整，以及增大触发范围
+    .og-fake-doc-breadcrumb-arrow-span {
+        height: 24px;
+        border-radius: var(--b3-border-radius);
+        display: flex;
+        align-items: center;
+    }
+    */
     /*移动端样式*/
     .og-fdb-mobile-btn-class {
         max-width: 60%;
@@ -953,6 +997,9 @@ function setStyle() {
     .og-fake-doc-breadcrumb-ellipsis {
         max-width: 112px;
     }
+    /* 文档图标不显示 */
+    .protyle-breadcrumb__item--active{ background-color: unset; }
+
     `;
     head.appendChild(style);
 }
@@ -1219,6 +1266,8 @@ let zh_CN = {
     "setting_nameMaxLength_desp": "文档名超出的部分将被删除。设置为0则不限制。",
     "setting_docMaxNum_name": "文档最大数量",
     "setting_docMaxNum_desp": "当子文档或同级文档超过该值时，后续文档将不再显示。设置为0则不限制。",
+    "setting_docShowMaxNum_name": "兄弟文档显示最大数量",
+    "setting_docShowMaxNum_desp": "当兄弟文档个数超过该值时，后续文档将不再显示。设置为0则不限制。",
     "error_initFailed": "文档面包屑插件初始化失败，如果可以，请向开发者反馈此问题",
     "setting_panel_title": "文档面包屑插件设置",
 }
