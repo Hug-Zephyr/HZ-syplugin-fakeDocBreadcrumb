@@ -231,8 +231,8 @@ LEVEL 4 Err + Warn + Info + Log
 LEVEL 5 Err + Warn + Info + Log + Debug
 */
 function commonPushCheck() {
+    return g_DEBUG;
     if (window.top["OpaqueGlassDebugV2"] == undefined || window.top["OpaqueGlassDebugV2"][g_NAME] == undefined) {
-        return g_DEBUG;
     }
     return window.top["OpaqueGlassDebugV2"][g_NAME];
 }
@@ -243,13 +243,13 @@ function isDebugMode() {
 
 function debugPush(str, ...args) {
     if (commonPushCheck() >= 5) {
-        console.debug(`${g_FULLNAME}[D] ${new Date().toLocaleString()} ${str}`, ...args);
+        console.log(`${g_FULLNAME}[D] ${new Date().toLocaleString()} ${str}`, ...args);
     }
 }
 
 function infoPush(str, ...args) {
     if (commonPushCheck() >= 3) {
-        console.info(`${g_FULLNAME}[I] ${new Date().toLocaleString()} ${str}`, ...args);
+        console.log(`${g_FULLNAME}[I] ${new Date().toLocaleString()} ${str}`, ...args);
     }
 }
 
@@ -261,14 +261,14 @@ function logPush(str, ...args) {
 
 function errorPush(str, ... args) {
     if (commonPushCheck() >= 1) {
-        console.error(`${g_FULLNAME}[E] ${new Date().toLocaleString()} ${str}`, ...args);
+        console.log(`${g_FULLNAME}[E] ${new Date().toLocaleString()} ${str}`, ...args);
         console.trace(args[0] ?? undefined);
     }
 }
 
 function warnPush(str, ... args) {
     if (commonPushCheck() >= 2) {
-        console.warn(`${g_FULLNAME}[W] ${new Date().toLocaleString()} ${str}`, ...args);
+        console.log(`${g_FULLNAME}[W] ${new Date().toLocaleString()} ${str}`, ...args);
     }
 }
 
@@ -497,84 +497,55 @@ async function parseDocPath(docDetail) {
 }
 
 async function generateElement(pathObjects, docId, protyle) {
-    const divideArrow = `<span class="${CONSTANTS.ARROW_SPAN_NAME} " data-og-type="%4%" data-parent-id="%5%" data-next-id="%6%" data-og-path="%7%" data-og-box="%8%"><svg class="${g_setting.usePluginArrow ? CONSTANTS.ARROW_CLASS_NAME : "protyle-breadcrumb__arrow"}"
-        >
-        <use xlink:href="#iconRight"></use></svg></span>
-        `;
-    const oneItem = `<span class="protyle-breadcrumb__item fake-breadcrumb-click" %FLOATWINDOW% data-node-id="%0%" data-og-type="%3%" data-node-names="%NAMES%">
-        %4%
-        <span class="protyle-breadcrumb__text" title="%1%">%2%</span>
-    </span>
-    `;
+    const oneItem = `
+        <span class="protyle-breadcrumb__item fake-breadcrumb-click" 
+            data-og-type="%data-og-type%" data-node-id="%data-node-id%"
+            data-og-box="%data-og-box%" data-parent-path="%data-parent-path%"
+            %FLOATWINDOW%>
+            %icon%
+            <span class="protyle-breadcrumb__text %active_file%" title="%file_name%">%file_name%</span>
+        </span>`;
+    const divideArrow = `
+        <span class="${CONSTANTS.ARROW_SPAN_NAME} ">
+            <svg class="${g_setting.usePluginArrow ? CONSTANTS.ARROW_CLASS_NAME : "protyle-breadcrumb__arrow"}">
+                <use xlink:href="#iconRight"></use>
+            </svg>
+        </span>`;
     let htmlStr = "";
     let countDebug = 0;
-    // 折叠隐藏自
-    const foldStartAt = g_setting.showNotebook ? g_setting.foldedFrontShow : 
-        g_setting.foldedFrontShow + 1;
-    // 折叠隐藏结束于
-    const foldEndAt = pathObjects.length - g_setting.foldedEndShow - 1;
     for (let i = 0; i < pathObjects.length; i++) {
         countDebug++;
-        if (countDebug > 200) {
+        if (countDebug > 100) {
             throw new Error(">_<出现死循环");
         }
-        // 层级过深时，对中间内容加以限制 -- hz: 取消这个效果, 改为超过5时, 改为新起一行显示
-        if (pathObjects.length > 5 && i >= foldStartAt && i <= foldEndAt && 0) {
-            let hidedIds = new Array();
-            let hidedNames = new Array();
-            let hideFrom = foldStartAt;
-            // 过滤笔记本，因为笔记本不可点击
-            if (hideFrom <= 0) hideFrom = 1;
-            for (let j = hideFrom;
-                 j <= foldEndAt; j++) {
-                hidedIds.push(pathObjects[j].id);
-                hidedNames.push(pathObjects[j].name);
-            }
-            debugPush(hidedIds, hidedNames);
-            htmlStr += oneItem
-                .replaceAll("%0%", JSON.stringify(hidedIds).replaceAll(`"`, `'`))
-                .replaceAll("%1%", "···")
-                .replaceAll("%2%", `···`)
-                .replaceAll("%3%", "...")
-                .replaceAll("%4%", "")
-                .replaceAll("%NAMES%", JSON.stringify(hidedNames).replaceAll(`"`, `'`))
-                .replaceAll("%FLOATWINDOW%", "");
-            htmlStr += divideArrow.replaceAll("%4%", "FILE") // HIDE时不理会
-                .replaceAll("%5%", pathObjects[foldEndAt].id)
-                .replaceAll("%6%", pathObjects[foldEndAt+1]?.id)
-                .replaceAll("%7%", pathObjects[foldEndAt].path)
-                .replaceAll("%8%", pathObjects[foldEndAt].box);
-            i = foldEndAt;
-            // 避免为负数，但好像没啥用
-            if (i < 0) i = 0;
-            continue;
-        }
-        let onePathObject = pathObjects[i];
+        const onePathObject = pathObjects[i];
         if (g_setting.showNotebook && i == 0 || i != 0) {
+            const parent_path = i == 0 ? "" : pathObjects[i-1].path;
+            const icon = i == 0 ? "📁" : '<svg class="popover__block"><use xlink:href="#iconFile"></use></svg>';
+            const active = i == pathObjects.length-1 ? 'b3-menu__item--selected' : "";
+            const float_window = g_setting.allowFloatWindow && onePathObject.type == "FILE" ? `data-type="block-ref" data-subtype="d" data-id="${onePathObject.id}"` : ""
             htmlStr += oneItem
-                .replaceAll("%0%", onePathObject.id)
-                .replaceAll("%1%", onePathObject.name)
-                .replaceAll("%2%", onePathObject.name)
-                .replaceAll("%3%", onePathObject.type)
-                .replaceAll("%4%", getEmojiHtmlStr(onePathObject.icon, onePathObject.subFileCount != 0, "og-fdb-bread-emojitext", "og-fdb-bread-emojipic", true, false))
-                .replaceAll("%FLOATWINDOW%", g_setting.allowFloatWindow && onePathObject.type == "FILE" ? `data-type="block-ref" data-subtype="d" data-id="${onePathObject.id}"` : "");
-            htmlStr += divideArrow
-                .replaceAll("%4%", onePathObject.type)
-                .replaceAll("%5%", pathObjects[i].id)
-                .replaceAll("%6%", pathObjects[i+1]? pathObjects[i+1].id : pathObjects[i].id)
-                .replaceAll("%7%", pathObjects[i].path)
-                .replaceAll("%8%", pathObjects[i].box);
+                .replaceAll("%data-og-type%", onePathObject.type) // data-og-type
+                .replaceAll("%data-node-id%", onePathObject.id)   // data-node-id
+                .replaceAll("%data-og-box%", onePathObject.box)   // data-og-box
+                .replaceAll("%file_name%", onePathObject.name)    // 显示的名字
+                .replaceAll("%icon%", icon)                       // 图标
+                .replaceAll("%data-parent-path%", parent_path)    // 父级目录
+                .replaceAll("%active_file%", active)              // 高亮当前文档
+                .replaceAll("%FLOATWINDOW%", float_window)        // 悬停后显示
+            htmlStr += divideArrow;
+            if (i == pathObjects.length-1) {
+                htmlStr += oneItem
+                    .replaceAll("%data-og-type%", onePathObject.type)     // data-og-type
+                    .replaceAll("%data-node-id%", onePathObject.id)       // data-node-id
+                    .replaceAll("%data-og-box%", onePathObject.box)       // data-og-box
+                    .replaceAll("%file_name%", "子文档")                     // 显示的名字
+                    .replaceAll("%icon%", icon)                           // 图标
+                    .replaceAll("%data-parent-path%", onePathObject.path) // 父级目录
+                    .replaceAll("%active_file%", "")                      // 高亮当前文档
+                    .replaceAll("%FLOATWINDOW%", "")                      // 悬停后显示
+            }
         }
-        // 最后一个文档、且不含子文档跳出判断
-        // if (i == pathObjects.length - 1 && !await isChildDocExist(onePathObject.id)) {
-        //     continue;
-        // }
-        // if (i == pathObjects.length - 1) {
-        //     htmlStr += oneItem.replaceAll("%0%", pathObjects[i].id)
-        //     .replaceAll("%1%", "···")
-        //     .replaceAll("%2%", `···`)
-        //     .replaceAll("%3%", "END-CHILD");
-        // }
     }
 
     let result = document.createElement("div");
@@ -655,7 +626,7 @@ function setAndApply(finalElement, docId, eventProtyle) {
 
     debugPush("重写面包屑成功");
     // v0.2.10应该是修改为仅范围内生效了，或许不再需要remove了
-    [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .fake-breadcrumb-click[data-og-type="FILE"], .protyle-breadcrumb__item--active`), (elem)=>{
+    [].forEach.call(protyleElem.querySelectorAll(`.og-fake-doc-breadcrumb-container .fake-breadcrumb-click[data-og-type="FILE"]`), (elem)=>{
         // console.log(elem);
         // // 点击打开文档
         // elem.removeEventListener("click", openRefLinkAgent);
@@ -733,22 +704,13 @@ async function openRelativeMenu(protyleElem, event) {
         this.lastMenu = null;
     }
     const click_ele = event.currentTarget;
-    let arrow = click_ele.previousElementSibling;
-    if (!arrow) {
-        arrow = [...protyleElem.querySelectorAll('.og-fake-doc-breadcrumb-arrow-span')].pop();;
-    }
-    let id = arrow.getAttribute("data-parent-id");
-    let nextId = arrow.getAttribute("data-next-id");
-    let thisPath = arrow.getAttribute("data-og-path");
-    let box = arrow.getAttribute("data-og-box");
+    let active_id = click_ele.getAttribute("data-node-id");
+    let path = click_ele.getAttribute("data-parent-path");
+    let box = click_ele.getAttribute("data-og-box");
     let rect = click_ele.getBoundingClientRect();
     event.stopPropagation();
     event.preventDefault();
-    let sqlResult = [{
-        path: thisPath,
-        box: box
-    }];
-    let siblings = await getChildDocuments(id, sqlResult);
+    let siblings = await getChildDocuments(box, path);
     if (siblings.length <= 0) {
         siblings = [{
             name: "空.sy",
@@ -766,12 +728,12 @@ async function openRelativeMenu(protyleElem, event) {
             : currSibling.name;
         let tempMenuItemObj = {
             iconHTML: getEmojiHtmlStr(currSibling.icon, currSibling.subFileCount > 0),
-            label: `<span class="${CONSTANTS.MENU_ITEM_CLASS_NAME} ${nextId == currSibling.id ? CONSTANTS.MENU_CURRENT_DOC_CLASS_NAME : ""}" 
+            label: `<span class="${CONSTANTS.MENU_ITEM_CLASS_NAME} ${active_id == currSibling.id ? CONSTANTS.MENU_CURRENT_DOC_CLASS_NAME : ""}" 
                 data-doc-id="${currSibling.id}"
                 title="${currSibling.name}">
                 ${trimedName}
             </span>`,
-            accelerator: nextId == currSibling.id ? "<-" : undefined,
+            accelerator: active_id == currSibling.id ? "<-" : undefined,
             click: (event)=>{
                 if (currSibling.id == 'temp') return;
                 let docId = event.querySelector("[data-doc-id]")?.getAttribute("data-doc-id")
@@ -780,7 +742,7 @@ async function openRelativeMenu(protyleElem, event) {
                     shiftKey: event?.shiftKey,
                     altKey: event?.altKey}, protyleElem);
             },
-            current: nextId == currSibling.id
+            current: active_id == currSibling.id
         }
         if (currSibling.icon != "" && currSibling.icon.indexOf(".") == -1) {
             tempMenuItemObj["icon"] = `icon-${currSibling.icon}`;
@@ -829,8 +791,8 @@ async function getHPathByID(docId) {
     return parseBody(request(url, data));
 }
 
-async function getChildDocuments(docId, sqlResult) {
-    let childDocs = await listDocsByPath({path: sqlResult[0].path, notebook: sqlResult[0].box});
+async function getChildDocuments(notebook, path) {
+    let childDocs = await listDocsByPath({path, notebook});
     if (childDocs.files.length > g_setting.docMaxNum && g_setting.docMaxNum != 0) {
         childDocs.files = childDocs.files.slice(0, g_setting.docMaxNum);
     }
@@ -885,6 +847,9 @@ function setStyle() {
         // margin-right: 3px;
         overflow-x: auto; /* 滚动查看，oneline套了一层div所以也得加overflow */
         flex-shrink: 0.5; /* 块面包屑过长时避免大范围占用文档面包屑 */
+    }
+    .og-fake-doc-breadcrumb-container .fake-breadcrumb-click[data-og-type]>span {
+        margin-left: 4px;
     }
 
     .og-fake-doc-breadcrumb-container .protyle-breadcrumb__item[data-og-type="NOTEBOOK"] {
@@ -998,7 +963,7 @@ function setStyle() {
         max-width: 112px;
     }
     /* 文档图标不显示 */
-    .protyle-breadcrumb__item--active{ background-color: unset; }
+    .protyle-breadcrumb__item--active{ display:none; }
 
     `;
     head.appendChild(style);
